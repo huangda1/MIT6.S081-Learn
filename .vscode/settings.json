@@ -1,0 +1,11 @@
+{
+    "files.associations": {
+        "memlayout.h": "c",
+        "defs.h": "c",
+        "elf.h": "c",
+        "cmath": "c",
+        "*.tcc": "c",
+        "user.h": "c",
+        "new": "c"
+    }
+}
