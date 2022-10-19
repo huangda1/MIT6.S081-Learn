@@ -51,6 +51,8 @@ exec(char *path, char **argv)
     uint64 sz1;
     if((sz1 = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz)) == 0)
       goto bad;
+    if(sz1 >= PLIC)
+      goto bad;
     sz = sz1;
     if(ph.vaddr % PGSIZE != 0)
       goto bad;
@@ -97,6 +99,11 @@ exec(char *path, char **argv)
   if(copyout(pagetable, sp, (char *)ustack, (argc+1)*sizeof(uint64)) < 0)
     goto bad;
 
+  // copy pagetable mappings to prockernel_pagetable
+  uvmunmap(p->kernel_pagetable, 0, PGROUNDUP(oldsz)/PGSIZE, 0);
+  if (proc_kernel_uvmcopy(pagetable, p->kernel_pagetable, 0, sz) == -1) {
+    goto bad;
+  }
   // arguments to user main(argc, argv)
   // argc is returned via the system call return
   // value, which goes in a0.
