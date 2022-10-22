@@ -694,3 +694,14 @@ procdump(void)
     printf("\n");
   }
 }
+
+int
+uvmlazyalloc(uint64 va) {
+  struct proc *p = myproc();
+
+  if(va >= p->sz || va < PGROUNDDOWN(p->trapframe->sp)) 
+    return -1;
+  if (uvmalloc(p->pagetable, PGROUNDDOWN(va), PGROUNDDOWN(va) + PGSIZE) == 0)
+    return -1;
+  return 0;
+}
