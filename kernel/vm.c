@@ -363,7 +363,7 @@ uvmcowcopy(pagetable_t pagetable, uint64 va)
   uint64 flags = PTE_FLAGS(*pte);
   flags |= PTE_W;
   flags &= ~PTE_COW;
-  uvmunmap(pagetable, PGROUNDDOWN(va), 1, 0);
+  uvmunmap(pagetable, PGROUNDDOWN(va), 1, 0); // ref = 1时候不能do_free,所以直接选择在kcowcopy中kfree（其实也不会真正的free）
   if(mappages(pagetable, PGROUNDDOWN(va), PGSIZE, npa, flags) == -1) { // 注意PGDOWN
     kfree((void*)npa);
     return -1;
