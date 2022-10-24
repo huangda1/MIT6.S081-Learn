@@ -23,11 +23,35 @@ struct {
   struct run *freelist;
 } kmem;
 
+struct page_ref{
+  struct spinlock lock;
+  int cnt;
+};
+
+#define PA2PGREF(p) (((p) - KERNBASE) / PGSIZE) 
+#define PGREF_MAX_LEN (PA2PGREF(PHYSTOP))
+
+struct page_ref page_ref_list[PGREF_MAX_LEN];
+
+void
+add_ref(void* pa)
+{
+  int idx = PA2PGREF((uint64)pa);
+  acquire(&(page_ref_list[idx].lock));
+  ++page_ref_list[idx].cnt;
+  release(&(page_ref_list[idx].lock));
+}
+
 void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
   freerange(end, (void*)PHYSTOP);
+
+  for(int i = 0; i < PGREF_MAX_LEN; i++) {
+    initlock(&page_ref_list[i].lock, "kpage_ref");
+    page_ref_list[i].cnt = 1;
+  }
 }
 
 void
@@ -50,6 +74,15 @@ kfree(void *pa)
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
+
+  int idx = PA2PGREF((uint64)pa);
+  acquire(&(page_ref_list[idx].lock));
+  --page_ref_list[idx].cnt;
+  if(page_ref_list[idx].cnt > 0) {
+    release(&(page_ref_list[idx].lock));
+    return;  
+  }
+  release(&(page_ref_list[idx].lock));
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
@@ -76,7 +109,33 @@ kalloc(void)
     kmem.freelist = r->next;
   release(&kmem.lock);
 
-  if(r)
+  if(r) {
     memset((char*)r, 5, PGSIZE); // fill with junk
+    // add_paref(r);
+    // thread safe 新分配的物理page不用加锁
+    page_ref_list[PA2PGREF((uint64)r)].cnt = 1;
+  }
   return (void*)r;
+}
+
+void *
+kcowcopy(void *pa)
+{
+  int idx = PA2PGREF((uint64)pa);
+  acquire(&page_ref_list[idx].lock);
+  if(page_ref_list[idx].cnt <= 1) {
+    release(&page_ref_list[idx].lock);
+    return pa;
+  } 
+  char *mem = kalloc();
+  if(mem == 0) {
+    release(&page_ref_list[idx].lock);
+    return 0;
+  }
+  
+  memmove(mem, pa, PGSIZE);
+  // page_ref_list[idx].cnt--;
+  release(&page_ref_list[idx].lock);
+  kfree(pa);
+  return (void*)mem;
 }

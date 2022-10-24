@@ -694,3 +694,14 @@ procdump(void)
     printf("\n");
   }
 }
+
+int 
+cow_copy(uint64 va)
+{
+  struct proc *p = myproc();
+  if(va >= p->sz)
+    return -1;
+  if(uvmcowcopy(p->pagetable, va) == -1)
+    return -1;
+  return 0;
+}
