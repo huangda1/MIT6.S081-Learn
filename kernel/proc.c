@@ -476,8 +476,9 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        // printf("\nscheduler: proc_%d running", p->pid);
         swtch(&c->context, &p->context);
-
+        // printf("\nscheduler: proc_%d after running", p->pid);
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0;
@@ -523,9 +524,11 @@ void
 yield(void)
 {
   struct proc *p = myproc();
+  // printf("\nyield: before proc_%d\n", p->pid);
   acquire(&p->lock);
   p->state = RUNNABLE;
   sched();
+  // printf("\nyield: after proc_%d\n", p->pid);
   release(&p->lock);
 }
 
