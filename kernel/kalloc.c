@@ -120,9 +120,9 @@ kalloc(void)
   // }
   
   // fatal error : 以上两种写法会发生死锁，两个线程互相要偷对方的页，持有自己的锁去获取别人的锁
-  release(&kmem[id].lock);
-  struct run *steal_freelist = 0;
-  int steal_pages = 64;
+    release(&kmem[id].lock);
+    struct run *steal_freelist = 0;
+    int steal_pages = 64;
     for (int i = 0; i < NCPU; i++) {
       if (i == id) continue;
       acquire(&kmem[i].lock);
