@@ -5,6 +5,11 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fcntl.h"
+#include "sleeplock.h"
+#include "fs.h"
+#include "file.h"
+
 
 struct cpu cpus[NCPU];
 
@@ -134,6 +139,9 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  for(int i=0;i<NVMA;i++) {
+    p->vmas[i].valid = 0;
+  }
   return p;
 }
 
@@ -300,6 +308,15 @@ fork(void)
 
   pid = np->pid;
 
+  for(i = 0; i < NVMA; i++) {
+    struct VMA *v = &p->vmas[i];
+    if(v->valid) {
+      np->vmas[i] = *v;
+      filedup(v->f);
+    }
+  }
+
+
   np->state = RUNNABLE;
 
   release(&np->lock);
@@ -336,6 +353,8 @@ reparent(struct proc *p)
 // Exit the current process.  Does not return.
 // An exited process remains in the zombie state
 // until its parent calls wait().
+
+extern int munmap(uint64 va, int sz);
 void
 exit(int status)
 {
@@ -350,6 +369,12 @@ exit(int status)
       struct file *f = p->ofile[fd];
       fileclose(f);
       p->ofile[fd] = 0;
+    }
+  }
+ 
+  for(int i = 0; i < NVMA; i++) {
+    if(p->vmas[i].valid) {
+      munmap(p->vmas[i].vastart, p->vmas[i].sz);
     }
   }
 
@@ -700,4 +725,52 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+int 
+mmaplazyalloc(uint64 va) {
+  struct proc *p = myproc();
+  struct VMA *v = 0;
+  for (int i = 0; i < NVMA; i++) {
+    struct VMA *vma = &p->vmas[i];
+    if(vma->valid && va >= vma->vastart && va < vma->vastart + vma->sz) {
+      v = vma;
+      break;
+    }
+  }
+
+  if (!v) {
+    return -1;
+  }
+  printf("pid: %d\n", p->pid);
+
+  char *pa = kalloc();
+  if (pa == 0) {
+    return -1;
+  }
+  memset(pa, 0, PGSIZE);
+  struct inode *ip = v->f->ip;
+
+  ilock(ip);
+  if (readi(ip, 0, (uint64)pa, va - v->vastart, PGSIZE) < 0) {
+    iunlock(ip);
+    return -1;
+  }
+  iunlock(ip);
+
+  // mapping pa, va
+  int perm = PTE_U | PTE_V;
+  if(v->prot & PROT_READ)
+    perm |= PTE_R;
+  if(v->prot & PROT_WRITE)
+    perm |= PTE_W;
+  if(v->prot & PROT_EXEC)
+    perm |= PTE_X;
+
+  if (mappages(p->pagetable, PGROUNDDOWN(va), PGSIZE, (uint64)pa, perm) < 0) {
+    kfree(pa);
+    return -1;
+  }
+
+  return 0;
 }

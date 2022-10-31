@@ -5,6 +5,11 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "fcntl.h"
+#include "spinlock.h"
+#include "sleeplock.h"
+#include "file.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -428,4 +433,34 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+int 
+mmap_writeback(uint64 va, int sz, pagetable_t pagetable, struct VMA* v)
+{
+  uint64 a = PGROUNDDOWN(va);
+  pte_t *pte;
+
+  for (; a < PGROUNDDOWN(va + sz); a += PGSIZE) {
+    if ((pte = walk(pagetable, a, 0)) == 0) {
+      panic("mmap_writeback: walk");
+    } 
+    if (PTE_FLAGS(*pte) == PTE_V)
+      panic("mmap_writeback: not leaf");
+    if (!(*pte & PTE_V)) continue;
+
+    // write_back
+    if ((*pte & PTE_D) && (v->flags & MAP_SHARED)) {
+      begin_op();
+      ilock(v->f->ip);
+      writei(v->f->ip, 1, a, a - va, PGSIZE);
+      iunlock(v->f->ip);
+      end_op();
+    }
+
+    kfree((void *)PTE2PA(*pte));
+    *pte = 0;
+  }
+  // 处理最后一页的情况
+  return 0;
 }

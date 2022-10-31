@@ -15,6 +15,7 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "fcntl.h"
+#include "memlayout.h"
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -483,4 +484,105 @@ sys_pipe(void)
     return -1;
   }
   return 0;
+}
+
+int 
+munmap(uint64 va, int sz)
+{
+  struct proc *p = myproc();
+  struct VMA *v = 0;
+  for (int i = 0; i < NVMA; i++) {
+    struct VMA *vma = &p->vmas[i];
+    if(vma->valid && va >= vma->vastart && va + sz <= vma->vastart + vma->sz) {
+      v = vma;
+      break;
+    }
+  }
+
+  if(!v)
+    return -1;
+
+  if(va > v->vastart && va + sz < v->vastart + v->sz) 
+    return -1;
+
+  //writeback and unmap
+  mmap_writeback(va, sz, p->pagetable, v);
+
+  if(va == v->vastart) {
+    v->vastart += sz;
+  }
+  v->sz -= sz;
+
+  if (v->sz <= 0) {
+    fileclose(v->f);
+    v->valid = 0;
+  }
+
+  return 0;
+}
+
+uint64
+sys_mmap(void)
+{
+  uint64 addr;
+  int sz, offset;
+  int prot, flags;
+  struct file *f;
+
+  if(argaddr(0, &addr) < 0 || argint(1, &sz) < 0 || argint(2, &prot) < 0 ||
+    argint(3, &flags) < 0 || argfd(4, 0, &f) < 0 || argint(5, &offset) < 0)
+    return -1;
+  
+  if(addr || offset)
+    return -1;
+  
+  if(!f->readable && (prot & PROT_READ))
+    return -1;
+  if(!f->writable && (prot & PROT_WRITE) && (flags & MAP_SHARED))
+    return -1;
+
+  sz = PGROUNDUP(sz);
+  struct proc *p = myproc();
+  struct VMA *v = 0;
+  uint64 vaend = MMAPEND;
+
+  for (int i = 0; i < NVMA; i++) {
+    if (!p->vmas[i].valid) {
+      v = &p->vmas[i];
+      break;
+    }
+  }
+
+  if (!v) {
+    return -1;
+  }
+
+  for (int i = 0; i < NVMA; i++) {
+    if (p->vmas[i].valid && p->vmas[i].vastart < vaend) {
+      vaend = PGROUNDDOWN(p->vmas[i].vastart);
+    }
+  }
+  v->vastart = vaend - sz;
+  v->sz = sz;
+  v->flags = flags;
+  v->prot = prot;
+  v->f = f;
+  v->valid = 1;
+  filedup(f);
+
+  return v->vastart;
+}
+
+uint64
+sys_munmap(void)
+{
+  uint64 addr;
+  int sz;
+  if(argaddr(0, &addr) < 0 || argint(1, &sz) < 0)
+    return -1;
+
+  if(sz < 0 || addr % PGSIZE) 
+    return -1;
+
+  return munmap(addr, sz);
 }

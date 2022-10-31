@@ -1,0 +1,14 @@
+{
+    "files.associations": {
+        "syscall.h": "c",
+        "proc.h": "c",
+        "fcntl.h": "c",
+        "spinlock.h": "c",
+        "file.h": "c",
+        "defs.h": "c",
+        "types.h": "c",
+        "fs.h": "c",
+        "param.h": "c",
+        "memlayout.h": "c"
+    }
+}
